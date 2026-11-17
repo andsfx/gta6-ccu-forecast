@@ -88,6 +88,9 @@ MOMENTUM_K = 0.5     # final-only: early-hour nudge per log-unit of 30-min slope
 MOMENTUM_CAP = 0.25  # cap on the final-only momentum nudge
 KERNEL_SIGMA = 0.5   # launch-scale kernel: weight comparables by |ln p1_c - ln p1_case|
 EARLY_K = 0.8       # early-hours correction when hour 1 printed below hour 0
+VC_K = -0.4         # streamer-concentration correction on the early hours
+VC_REF = 4.0        # reference log viewers-per-channel at hour 1
+VC_HMAX = 8         # last hour the concentration correction reaches
 
 # Per-hour median bias of the kernel-weighted pooled curve on the four practice
 # launches, shrunk 0.7x and leave-one-out validated: corrects the systematic shape
@@ -382,6 +385,12 @@ def forecast_case(case):
         # the opposite effect on the earliest hours: a crashed hour 1 recovers
         early_boost = min(EARLY_K * anomaly, 0.5)
 
+    # streamer-concentration correction: a category dominated by few big streamers
+    # decays harder in the early hours once those streamers sign off
+    vc_shift = 0.0
+    if first_row.get("channels") and first_row["channels"] > 0 and first_row["viewers"] > 0:
+        vc_shift = VC_K * (math.log(first_row["viewers"] / first_row["channels"]) - VC_REF)
+
     # off-scale case: hour 1 far above anything the category saw pre-launch means
     # the shape is being extrapolated, so widen every spread a little
     pre_max = 0.0
@@ -412,6 +421,8 @@ def forecast_case(case):
             mean += boost * min(1.0, (hour - 4) / 6.0)
         if early_boost > 0 and hour <= 4:
             mean += early_boost * max(0.0, 1.0 - (hour - 2) / 2.0)
+        if vc_shift != 0.0 and hour <= VC_HMAX:
+            mean += vc_shift * max(0.0, 1.0 - (hour - 2) / (VC_HMAX - 1.0))
         if momentum != 0.0 and hour <= 4:
             mean += momentum * max(0.0, 1.0 - (hour - 2) / 3.0)
         if accel_nudge != 0.0 and hour <= 4:
