@@ -69,13 +69,11 @@ PRACTICE_LAUNCHES = (
 )
 PRACTICE_WEIGHT = 1.4
 
-# Mega-launch comparables, mixed unlock patterns, added at low weight for scale
-# diversity: GTA VI's day will be the biggest in the set, so the largest launches'
-# fuller curves earn a small voice in the pool.
-EXTRA_NAMES = {
-    "ELDEN RING": 0.5,
-    "Cyberpunk 2077": 0.35,
-}
+# Mega-launch comparables were removed from the pool: with the launch-scale kernel
+# they are inert for in-range cases and positively harmful for off-scale cases
+# (Elden Ring and Cyberpunk 2077 are GLOBAL-unlock launches whose hour-1 print IS
+# their peak wave, so their curves wrongly flatten a rolling-midnight forecast).
+EXTRA_NAMES = {}
 
 # Shape parameters, fitted offline on the four practice cases (their answers come
 # from SullyGnome, the same source the case files name).
@@ -341,7 +339,7 @@ def forecast_case(case):
     # so a floor takes over: the biggest launches plus a uniform share of the rest.
     case_ln_p1 = math.log(max(float(first_row["viewers"]), 1.0))
     pool_max = max((ln_p1 for _, _, _, ln_p1 in rows), default=case_ln_p1)
-    kfloor = KERNEL_FLOOR if case_ln_p1 > pool_max + 0.5 else 0.0
+    kfloor = KERNEL_FLOOR if case_ln_p1 > pool_max - 0.3 else 0.0
     rows = [(name, weight * max(math.exp(-((ln_p1 - case_ln_p1) ** 2) / (2 * KERNEL_SIGMA ** 2)), kfloor), ratios)
             for name, weight, ratios, ln_p1 in rows]
 
