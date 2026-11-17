@@ -88,15 +88,15 @@ MOMENTUM_K = 0.5     # final-only: early-hour nudge per log-unit of 30-min slope
 MOMENTUM_CAP = 0.25  # cap on the final-only momentum nudge
 
 # Per-hour median bias of the pooled curve on the four practice launches, shrunk
-# 0.4x and leave-one-out validated: it corrects the systematic shape errors (the
+# 0.6x and leave-one-out validated (refit on the retuned model): it corrects the systematic shape errors (the
 # pool under-predicts the US-morning surge at hours 4-8 and over-predicts the
 # mid-day plateau at hours 10-16). Applied as a log shift on every hour.
 HOUR_BIAS = {
-    2: -0.007114, 3: 0.041307, 4: 0.005816, 5: 0.196190, 6: 0.140551,
-    7: 0.075615, 8: 0.035391, 9: -0.020379, 10: -0.086703, 11: -0.107880,
-    12: -0.176309, 13: -0.194668, 14: -0.170775, 15: -0.128695, 16: -0.099672,
-    17: -0.043019, 18: 0.014314, 19: -0.008069, 20: -0.056114, 21: -0.054843,
-    22: -0.043065, 23: -0.023004, 24: -0.041081,
+    2: -0.010671, 3: 0.061960, 4: 0.008724, 5: 0.281858, 6: 0.189379,
+    7: 0.088179, 8: 0.053087, 9: -0.069608, 10: -0.130055, 11: -0.216292,
+    12: -0.328803, 13: -0.356341, 14: -0.320503, 15: -0.257382, 16: -0.213848,
+    17: -0.116524, 18: 0.011247, 19: -0.022328, 20: -0.094395, 21: -0.092488,
+    22: -0.074821, 23: -0.044729, 24: -0.068809,
 }
 
 
