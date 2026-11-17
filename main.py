@@ -278,6 +278,46 @@ def minute_slope(case):
     return num / den  # log viewers per second
 
 
+def minute_accel(case):
+    """Final-case only: log-slope change between the [-30,-15] and [-15,0] minute
+    windows of hour 1, in log per hour squared (scaled); None without minute data."""
+    history = [point for point in case.get("history") or [] if point.get("viewers")]
+    if len(history) < 20:
+        return None
+    try:
+        last_at = parse_time(history[-1]["at"])
+    except (KeyError, ValueError):
+        return None
+    windows = {}
+    for label, (lo, hi) in (("early", (30, 15)), ("late", (15, 0))):
+        lo_at = last_at - timedelta(minutes=lo)
+        hi_at = last_at - timedelta(minutes=hi)
+        pts = []
+        for point in history:
+            try:
+                at = parse_time(point["at"])
+            except (KeyError, ValueError):
+                continue
+            if lo_at <= at < hi_at:
+                pts.append((at, point["viewers"]))
+        if len(pts) < 5:
+            return None
+        pts.sort(key=lambda pair: pair[0])
+        x0 = pts[0][0].timestamp()
+        n = len(pts)
+        mean_t = sum((at.timestamp() - x0) for at, _ in pts) / n
+        mean_v = sum(math.log(max(v, 1.0)) for _, v in pts) / n
+        num = sum((at.timestamp() - x0 - mean_t) * (math.log(max(v, 1.0)) - mean_v) for at, v in pts)
+        den = sum((at.timestamp() - x0 - mean_t) ** 2 for at, _ in pts)
+        if den <= 0:
+            return None
+        windows[label] = num / den  # log viewers per second
+    if "early" not in windows or "late" not in windows:
+        return None
+    # slope change per 15 minutes, scaled to an hour: log per hour per hour
+    return (windows["late"] - windows["early"]) * 900.0
+
+
 def forecast_case(case):
     first_row = next((row for row in case["known"] if row["hour"] == 1), None)
     if first_row is None:
@@ -344,6 +384,11 @@ def forecast_case(case):
         momentum = 0.0
     else:
         momentum = max(-MOMENTUM_CAP, min(MOMENTUM_CAP, MOMENTUM_K * slope * 3600.0))
+    accel = minute_accel(case)
+    if accel is None:
+        accel_nudge = 0.0
+    else:
+        accel_nudge = max(-0.15, min(0.15, 0.35 * accel))
 
     n_comparables = max(len(fits), 1)
     forecast = []
@@ -354,6 +399,8 @@ def forecast_case(case):
             mean += boost * min(1.0, (hour - 4) / 6.0)
         if momentum != 0.0 and hour <= 4:
             mean += momentum * max(0.0, 1.0 - (hour - 2) / 3.0)
+        if accel_nudge != 0.0 and hour <= 4:
+            mean += accel_nudge * max(0.0, 1.0 - (hour - 2) / 2.0)
         spread = math.sqrt((spreads[hour] * widen) ** 2 * (1 + 1 / n_comparables) * SPREAD_K + FLOOR ** 2)
         quantiles_log = [mean + z * spread for z in ZSCORES]
         previous = None
