@@ -43,7 +43,7 @@ ZSCORES = [-1.6448536, -0.6744898, 0.0, 0.6744898, 1.6448536]
 
 # Console-at-launch launches whose release-day curve we trust as a shape reference,
 # the four practice launches of this competition included (the final case's
-# comparables hold them).
+# comparables hold them; weight them up when present).
 CONSOLE_NAMES = (
     "Ghost of Yōtei",
     "Saros",
@@ -58,6 +58,24 @@ CONSOLE_NAMES = (
     "God of War Ragnarök",
     "Marvel's Spider-Man 2",
 )
+
+# The competition's four practice launches: the house's own pick of the closest
+# shapes, present in the final case's comparables, weighted up when found.
+PRACTICE_LAUNCHES = (
+    "Marvel's Wolverine",
+    "Red Dead Redemption 2",
+    "God of War Ragnarök",
+    "Marvel's Spider-Man 2",
+)
+PRACTICE_WEIGHT = 1.4
+
+# Mega-launch comparables, mixed unlock patterns, added at low weight for scale
+# diversity: GTA VI's day will be the biggest in the set, so the largest launches'
+# fuller curves earn a small voice in the pool.
+EXTRA_NAMES = {
+    "ELDEN RING": 0.5,
+    "Cyberpunk 2077": 0.35,
+}
 
 # Shape parameters, fitted offline on the four practice cases (their answers come
 # from SullyGnome, the same source the case files name).
@@ -103,11 +121,14 @@ def recency_weight(year):
 
 def comparable_ratios(case, console_only=True):
     """Return [(name, weight, {hour: log-ratio to hour-1 print})] for comparables
-    whose release-day data parses. With console_only, keep only CONSOLE_NAMES."""
+    whose release-day data parses. With console_only, keep only CONSOLE_NAMES plus
+    the low-weight mega launches; the practice launches get a weight-up."""
     rows = []
     for comp in case.get("comparables") or []:
         name = comp.get("name") or ""
-        if console_only and not any(key in name for key in CONSOLE_NAMES):
+        is_console = any(key in name for key in CONSOLE_NAMES)
+        is_extra = name in EXTRA_NAMES
+        if console_only and not is_console and not is_extra:
             continue
         day_start = comp.get("day_start")
         if not day_start:
@@ -117,6 +138,10 @@ def comparable_ratios(case, console_only=True):
         except ValueError:
             year = 2020
         weight = tier_weight(comp.get("unlock") or "") * recency_weight(year)
+        if is_extra:
+            weight *= EXTRA_NAMES[name]
+        elif any(key in name for key in PRACTICE_LAUNCHES):
+            weight *= PRACTICE_WEIGHT
         day0 = parse_time(day_start)
         by_hour = {}
         for point in comp.get("hourly") or []:
@@ -292,6 +317,15 @@ def forecast_case(case):
         ratio01 = first_row["viewers"] / hour0
         boost = min(BOOST_MULT * max(0.0, math.log(0.8) - math.log(ratio01)), BOOST_CAP)
 
+    # off-scale case: hour 1 far above anything the category saw pre-launch means
+    # the shape is being extrapolated, so widen every spread a little
+    pre_max = 0.0
+    for point in case.get("history_hourly") or []:
+        viewers = point.get("viewers")
+        if viewers:
+            pre_max = max(pre_max, float(viewers))
+    widen = 1.2 if (pre_max > 0 and first_row["viewers"] > 20 * pre_max) else 1.0
+
     # final-only: intra-hour-1 momentum nudges hours 2..4
     slope = minute_slope(case)
     if slope is None:
@@ -308,7 +342,7 @@ def forecast_case(case):
             mean += boost * min(1.0, (hour - 4) / 6.0)
         if momentum != 0.0 and hour <= 4:
             mean += momentum * max(0.0, 1.0 - (hour - 2) / 3.0)
-        spread = math.sqrt(spreads[hour] ** 2 * (1 + 1 / n_comparables) * SPREAD_K + FLOOR ** 2)
+        spread = math.sqrt((spreads[hour] * widen) ** 2 * (1 + 1 / n_comparables) * SPREAD_K + FLOOR ** 2)
         quantiles_log = [mean + z * spread for z in ZSCORES]
         previous = None
         ordered = []
