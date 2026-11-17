@@ -87,6 +87,7 @@ BOOST_CAP = 1.2      # cap on that correction, in log units
 MOMENTUM_K = 0.5     # final-only: early-hour nudge per log-unit of 30-min slope
 MOMENTUM_CAP = 0.25  # cap on the final-only momentum nudge
 KERNEL_SIGMA = 0.5   # launch-scale kernel: weight comparables by |ln p1_c - ln p1_case|
+KERNEL_FLOOR = 0.15  # minimum kernel weight once the case is beyond the pool's range
 EARLY_K = 0.8       # early-hours correction when hour 1 printed below hour 0
 VC_K = -0.4         # streamer-concentration correction on the early hours
 VC_REF = 4.0        # reference log viewers-per-channel at hour 1
@@ -334,9 +335,14 @@ def forecast_case(case):
         rows = comparable_ratios(case, console_only=False)
 
     # launch-scale kernel: weight comparables by how close their hour-1 print is
-    # to this case's (bigger launches have systematically smaller day ratios)
+    # to this case's (bigger launches have systematically smaller day ratios).
+    # When the case's hour-1 print runs past the pool's range the raw kernel would
+    # collapse every weight to ~zero (leaving the model an effectively empty pool),
+    # so a floor takes over: the biggest launches plus a uniform share of the rest.
     case_ln_p1 = math.log(max(float(first_row["viewers"]), 1.0))
-    rows = [(name, weight * math.exp(-((ln_p1 - case_ln_p1) ** 2) / (2 * KERNEL_SIGMA ** 2)), ratios)
+    pool_max = max((ln_p1 for _, _, _, ln_p1 in rows), default=case_ln_p1)
+    kfloor = KERNEL_FLOOR if case_ln_p1 > pool_max + 0.5 else 0.0
+    rows = [(name, weight * max(math.exp(-((ln_p1 - case_ln_p1) ** 2) / (2 * KERNEL_SIGMA ** 2)), kfloor), ratios)
             for name, weight, ratios, ln_p1 in rows]
 
     fits = []
@@ -390,6 +396,7 @@ def forecast_case(case):
     vc_shift = 0.0
     if first_row.get("channels") and first_row["channels"] > 0 and first_row["viewers"] > 0:
         vc_shift = VC_K * (math.log(first_row["viewers"] / first_row["channels"]) - VC_REF)
+        vc_shift = max(-0.6, min(0.3, vc_shift))
 
     # off-scale case: hour 1 far above anything the category saw pre-launch means
     # the shape is being extrapolated, so widen every spread a little
