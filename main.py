@@ -79,24 +79,25 @@ EXTRA_NAMES = {
 
 # Shape parameters, fitted offline on the four practice cases (their answers come
 # from SullyGnome, the same source the case files name).
-SPREAD_K = 0.8       # multiplier on the pooled spread
+SPREAD_K = 0.75      # multiplier on the pooled spread
 FLOOR = 0.08         # model-risk floor added in quadrature to every spread
 WINDOW = 2           # hours pooled around h for the spread estimate
-BOOST_MULT = 2.8     # strength of the hour-1-below-hour-0 correction
+BOOST_MULT = 2.4     # strength of the hour-1-below-hour-0 correction
 BOOST_CAP = 1.2      # cap on that correction, in log units
 MOMENTUM_K = 0.5     # final-only: early-hour nudge per log-unit of 30-min slope
 MOMENTUM_CAP = 0.25  # cap on the final-only momentum nudge
+KERNEL_SIGMA = 0.5   # launch-scale kernel: weight comparables by |ln p1_c - ln p1_case|
 
-# Per-hour median bias of the pooled curve on the four practice launches, shrunk
-# 0.6x and leave-one-out validated (refit on the retuned model): it corrects the systematic shape errors (the
-# pool under-predicts the US-morning surge at hours 4-8 and over-predicts the
-# mid-day plateau at hours 10-16). Applied as a log shift on every hour.
+# Per-hour median bias of the kernel-weighted pooled curve on the four practice
+# launches, shrunk 0.7x and leave-one-out validated: corrects the systematic shape
+# errors (under-predicted US-morning surge at hours 4-8, over-predicted mid-day
+# plateau at hours 10-16). Applied as a log shift on every hour.
 HOUR_BIAS = {
-    2: -0.010671, 3: 0.061960, 4: 0.008724, 5: 0.281858, 6: 0.189379,
-    7: 0.088179, 8: 0.053087, 9: -0.069608, 10: -0.130055, 11: -0.216292,
-    12: -0.328803, 13: -0.356341, 14: -0.320503, 15: -0.257382, 16: -0.213848,
-    17: -0.116524, 18: 0.011247, 19: -0.022328, 20: -0.094395, 21: -0.092488,
-    22: -0.074821, 23: -0.044729, 24: -0.068809,
+    2: 0.022173, 3: 0.025056, 4: 0.052182, 5: 0.250215, 6: 0.150676,
+    7: 0.152303, 8: 0.064828, 9: -0.016497, 10: -0.110284, 11: -0.195655,
+    12: -0.281673, 13: -0.298175, 14: -0.267099, 15: -0.215024, 16: -0.190042,
+    17: -0.059622, 18: 0.086636, 19: 0.034660, 20: -0.017143, 21: -0.036431,
+    22: 0.000092, 23: 0.040946, 24: -0.008454,
 }
 
 
@@ -132,9 +133,10 @@ def recency_weight(year):
 
 
 def comparable_ratios(case, console_only=True):
-    """Return [(name, weight, {hour: log-ratio to hour-1 print})] for comparables
-    whose release-day data parses. With console_only, keep only CONSOLE_NAMES plus
-    the low-weight mega launches; the practice launches get a weight-up."""
+    """Return [(name, weight, {hour: log-ratio to hour-1 print}, ln_p1)] for
+    comparables whose release-day data parses. With console_only, keep only
+    CONSOLE_NAMES plus the low-weight mega launches; the practice launches get a
+    weight-up. ln_p1 feeds the launch-scale kernel in forecast_case."""
     rows = []
     for comp in case.get("comparables") or []:
         name = comp.get("name") or ""
@@ -177,7 +179,7 @@ def comparable_ratios(case, console_only=True):
             if value is not None and value > 0:
                 ratios[hour] = math.log(max(value / first, 1e-4))
         if ratios:
-            rows.append((name, weight, ratios))
+            rows.append((name, weight, ratios, math.log(first)))
     return rows
 
 
@@ -326,6 +328,12 @@ def forecast_case(case):
     rows = comparable_ratios(case, console_only=True)
     if not rows:
         rows = comparable_ratios(case, console_only=False)
+
+    # launch-scale kernel: weight comparables by how close their hour-1 print is
+    # to this case's (bigger launches have systematically smaller day ratios)
+    case_ln_p1 = math.log(max(float(first_row["viewers"]), 1.0))
+    rows = [(name, weight * math.exp(-((ln_p1 - case_ln_p1) ** 2) / (2 * KERNEL_SIGMA ** 2)), ratios)
+            for name, weight, ratios, ln_p1 in rows]
 
     fits = []
     for name, weight, ratios in rows:
