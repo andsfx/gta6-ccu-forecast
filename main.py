@@ -87,6 +87,7 @@ BOOST_CAP = 1.2      # cap on that correction, in log units
 MOMENTUM_K = 0.5     # final-only: early-hour nudge per log-unit of 30-min slope
 MOMENTUM_CAP = 0.25  # cap on the final-only momentum nudge
 KERNEL_SIGMA = 0.5   # launch-scale kernel: weight comparables by |ln p1_c - ln p1_case|
+EARLY_K = 0.8       # early-hours correction when hour 1 printed below hour 0
 
 # Per-hour median bias of the kernel-weighted pooled curve on the four practice
 # launches, shrunk 0.7x and leave-one-out validated: corrects the systematic shape
@@ -372,10 +373,14 @@ def forecast_case(case):
 
     # momentum correction from the hour-1 vs hour-0 relationship
     boost = 0.0
+    early_boost = 0.0
     hour0 = hour_zero_print(case)
     if hour0 and hour0 > 0 and first_row["viewers"] > 0:
         ratio01 = first_row["viewers"] / hour0
-        boost = min(BOOST_MULT * max(0.0, math.log(0.8) - math.log(ratio01)), BOOST_CAP)
+        anomaly = max(0.0, math.log(0.8) - math.log(ratio01))
+        boost = min(BOOST_MULT * anomaly, BOOST_CAP)
+        # the opposite effect on the earliest hours: a crashed hour 1 recovers
+        early_boost = min(EARLY_K * anomaly, 0.5)
 
     # off-scale case: hour 1 far above anything the category saw pre-launch means
     # the shape is being extrapolated, so widen every spread a little
@@ -405,6 +410,8 @@ def forecast_case(case):
         mean = mean_h[hour] + HOUR_BIAS.get(hour, 0.0)
         if boost > 0 and hour >= 5:
             mean += boost * min(1.0, (hour - 4) / 6.0)
+        if early_boost > 0 and hour <= 4:
+            mean += early_boost * max(0.0, 1.0 - (hour - 2) / 2.0)
         if momentum != 0.0 and hour <= 4:
             mean += momentum * max(0.0, 1.0 - (hour - 2) / 3.0)
         if accel_nudge != 0.0 and hour <= 4:
