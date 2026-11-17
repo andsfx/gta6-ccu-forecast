@@ -79,13 +79,25 @@ EXTRA_NAMES = {
 
 # Shape parameters, fitted offline on the four practice cases (their answers come
 # from SullyGnome, the same source the case files name).
-SPREAD_K = 0.9       # multiplier on the pooled spread
-FLOOR = 0.12         # model-risk floor added in quadrature to every spread
+SPREAD_K = 0.8       # multiplier on the pooled spread
+FLOOR = 0.08         # model-risk floor added in quadrature to every spread
 WINDOW = 2           # hours pooled around h for the spread estimate
 BOOST_MULT = 2.2     # strength of the hour-1-below-hour-0 correction
 BOOST_CAP = 1.2      # cap on that correction, in log units
 MOMENTUM_K = 0.5     # final-only: early-hour nudge per log-unit of 30-min slope
 MOMENTUM_CAP = 0.25  # cap on the final-only momentum nudge
+
+# Per-hour median bias of the pooled curve on the four practice launches, shrunk
+# 0.4x and leave-one-out validated: it corrects the systematic shape errors (the
+# pool under-predicts the US-morning surge at hours 4-8 and over-predicts the
+# mid-day plateau at hours 10-16). Applied as a log shift on every hour.
+HOUR_BIAS = {
+    2: -0.007114, 3: 0.041307, 4: 0.005816, 5: 0.196190, 6: 0.140551,
+    7: 0.075615, 8: 0.035391, 9: -0.020379, 10: -0.086703, 11: -0.107880,
+    12: -0.176309, 13: -0.194668, 14: -0.170775, 15: -0.128695, 16: -0.099672,
+    17: -0.043019, 18: 0.014314, 19: -0.008069, 20: -0.056114, 21: -0.054843,
+    22: -0.043065, 23: -0.023004, 24: -0.041081,
+}
 
 
 def round2(value):
@@ -337,7 +349,7 @@ def forecast_case(case):
     forecast = []
     for row in case["forecast"]:
         hour = row["hour"]
-        mean = mean_h[hour]
+        mean = mean_h[hour] + HOUR_BIAS.get(hour, 0.0)
         if boost > 0 and hour >= 5:
             mean += boost * min(1.0, (hour - 4) / 6.0)
         if momentum != 0.0 and hour <= 4:
